@@ -14,14 +14,13 @@ public class Pao extends Piece {
         return "炮";
     }
 
+// ... 在 Pao.java ...
+
     @Override
     public List<Position> getValidMoves(Board board) {
         List<Position> moves = new ArrayList<>();
 
-        // 检查 4 个方向
-        
         // 1. 检查上方 (row 减小)
-        // (我帮你实现这 1 个方向)
         boolean foundScreenUp = false; // "炮台"
         for (int r = this.position.row() - 1; r >= 0; r--) {
             Position newPos = new Position(r, this.position.col());
@@ -41,19 +40,16 @@ public class Pao extends Piece {
                     if (targetPiece.getPlayer() != this.player) {
                         moves.add(newPos); // 吃子
                     }
-                    break; // 停止 (无论吃不吃)
+                    break; // 【BUG 修复】 无论吃不吃, 必须停止
                 }
             }
         }
 
-        // --- 你的任务 ---
         // 2. 检查下方 (row 增大, 最大到 9)
         boolean foundScreenDown = false;
         for (int r = this.position.row() + 1; r <= 9; r++) {
             Position newPos = new Position(r, this.position.col());
-            // --- 请在这里填入和"上方"几乎一样的逻辑 ---
             Piece targetPiece = board.getPiece(newPos);
-
             if (targetPiece == null) {
                 if (!foundScreenDown) {
                     moves.add(newPos);
@@ -65,19 +61,16 @@ public class Pao extends Piece {
                     if (targetPiece.getPlayer() != this.player) {
                         moves.add(newPos);
                     }
-                    break;
+                    break; // 【BUG 修复】
                 }
             }
         }
-
 
         // 3. 检查左方 (col 减小)
         boolean foundScreenLeft = false;
         for (int c = this.position.col() - 1; c >= 0; c--) {
             Position newPos = new Position(this.position.row(), c);
-            // --- 请在这里填入和"上方"几乎一样的逻辑 ---
             Piece targetPiece = board.getPiece(newPos);
-            
             if (targetPiece == null) {
                 if (!foundScreenLeft) {
                     moves.add(newPos);
@@ -89,7 +82,7 @@ public class Pao extends Piece {
                     if (targetPiece.getPlayer() != this.player) {
                         moves.add(newPos);
                     }
-                    break;
+                    break; // 【BUG 修复】
                 }
             }
         }
@@ -98,9 +91,7 @@ public class Pao extends Piece {
         boolean foundScreenRight = false;
         for (int c = this.position.col() + 1; c <= 8; c++) {
             Position newPos = new Position(this.position.row(), c);
-            // --- 请在这里填入和"上方"几乎一样的逻辑 ---
             Piece targetPiece = board.getPiece(newPos);
-
             if (targetPiece == null) {
                 if (!foundScreenRight) {
                     moves.add(newPos);
@@ -112,7 +103,7 @@ public class Pao extends Piece {
                     if (targetPiece.getPlayer() != this.player) {
                         moves.add(newPos);
                     }
-                    break;
+                    break; // 【BUG 修复】
                 }
             }
         }

@@ -44,7 +44,7 @@ public class Bing extends Piece {
     /**
      * 辅助方法: 检查是否已过河
      */
-    private boolean hasCrossedRiver() {
+    public boolean hasCrossedRiver() {
         if (this.player == Player.RED) {
             return this.position.row() <= 4; // 红兵过河 (row 0-4)
         } else {

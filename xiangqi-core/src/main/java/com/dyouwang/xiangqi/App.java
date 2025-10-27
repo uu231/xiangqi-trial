@@ -1,63 +1,61 @@
 package com.dyouwang.xiangqi; // 确保这是你的包名
 
-import java.util.Scanner;
+// (不需要 import List, Scanner 等)
 
 public class App {
 
+    // AI 思考的深度
+    // 警告: 深度 5 可能会非常慢 (30-60 秒)!
+    // 建议从 3 开始
+    private static final int AI_SEARCH_DEPTH = 3;
+
     public static void main(String[] args) {
-        // 1. 创建游戏实例
+        runAiTest();
+    }
+
+    /**
+     * 测试: AI 走第一步棋
+     */
+    public static void runAiTest() {
+        System.out.println("=================================");
+        System.out.println("      测试：AI Minimax (深度 " + AI_SEARCH_DEPTH + ")");
+        System.out.println("=================================");
+        
         Game game = new Game();
-        Scanner scanner = new Scanner(System.in);
+        AIEngine ai = new AIEngine();
         
-        // 2. 游戏主循环
-        while (true) {
+        // 1. 打印开局棋盘
+        System.out.println("--- 1. 开局 ---");
+        game.getBoard().printBoard();
+        System.out.println("轮到: " + game.getCurrentPlayer());
+
+        // 2. AI 思考
+        System.out.println("AI 正在思考 (深度 " + AI_SEARCH_DEPTH + ")... 这可能需要几秒钟...");
+        long startTime = System.currentTimeMillis();
         
-            // 3. 打印当前棋盘
-            game.getBoard().printBoard();
+        Move aiMove = ai.findBestMove(game, AI_SEARCH_DEPTH);
+        
+        long endTime = System.currentTimeMillis();
+        System.out.println("AI 思考用时: " + (endTime - startTime) + " 毫秒");
+
+        // 3. AI 执行走法
+        if (aiMove != null) {
+            System.out.println("AI 选择的走法是: " + aiMove);
+            game.makeMove(aiMove);
             
-            // 4. 打印轮到谁走
-            System.out.println("---------------------------------");
+            System.out.println("\n--- 2. AI 走棋后 ---");
+            game.getBoard().printBoard();
             System.out.println("轮到: " + game.getCurrentPlayer());
             
-            // 5. (TODO: 检查将死或逼和)
-            // if (game.isCheckmate(game.getCurrentPlayer())) { ... }
-
-            // 6. 获取用户输入
-            System.out.println("请输入走法 (例如: 9070 代表 (9,0) 走到 (7,0)):");
-            String input = scanner.nextLine();
+            // 检查 AI 是否将军了
+            if (game.isKingInCheck(game.getCurrentPlayer())) {
+                System.out.println("*******************");
+                System.out.println("      将 军 ! (CHECK!)");
+                System.out.println("*******************");
+            }
             
-            if (input.equals("exit")) {
-                System.out.println("游戏结束!");
-                break;
-            }
-
-            // 7. 尝试解析并执行走法
-            try {
-                Move move = Move.fromString(input);
-                boolean success = game.makeMove(move);
-                
-                if (success) {
-                    System.out.println("走法成功!");
-                    
-                    // 【新功能】 检查是否 "将军" 了对方
-                    if (game.isKingInCheck(game.getCurrentPlayer())) {
-                        System.out.println("*******************");
-                        System.out.println("      将 军 ! (CHECK!)");
-                        System.out.println("*******************");
-                    }
-
-                } else {
-                    System.out.println("走法失败, 请重试.");
-                }
-
-            } catch (IllegalArgumentException e) {
-                System.out.println("输入格式错误, 请输入 4 个数字 (例如 9070). " + e.getMessage());
-            } catch (Exception e) {
-                System.out.println("发生未知错误: " + e.getMessage());
-                e.printStackTrace(); // 打印详细错误
-            }
+        } else {
+            System.out.println("错误: AI 无法找到任何走法!");
         }
-        
-        scanner.close();
     }
 }
