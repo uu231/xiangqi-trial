@@ -1,0 +1,13 @@
+# Java/Maven
+target/
+*.jar
+*.war
+
+# Logs and temporary files
+*.log
+output.txt
+
+# IDE files
+.idea/
+.vscode/
+*.iml
