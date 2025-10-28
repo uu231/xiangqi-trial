@@ -15,6 +15,8 @@ import javafx.scene.shape.StrokeType;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
+import javafx.animation.TranslateTransition;
+import javafx.util.Duration;
 
 import com.dyouwang.xiangqi.Board;
 import com.dyouwang.xiangqi.Game;
@@ -22,6 +24,7 @@ import com.dyouwang.xiangqi.Piece;
 import com.dyouwang.xiangqi.Player;
 import com.dyouwang.xiangqi.Position;
 import com.dyouwang.xiangqi.Move;
+import com.dyouwang.xiangqi.AIEngine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +43,7 @@ public class MainApp extends Application {
     private Game game;
     private Pane pieceLayer;
     private Pane highlightLayer; // 【新】用于显示合法走法提示
+    private AIEngine aiEngine;
 
     // --- 【新】用于跟踪用户交互 ---
     private Position selectedPiecePosition = null; // 当前选中的棋子位置, null表示未选中
@@ -49,6 +53,7 @@ public class MainApp extends Application {
     @Override
     public void start(Stage stage) {
         game = new Game();
+        aiEngine = new AIEngine();
         Board board = game.getBoard();
 
         // 1. 创建 GridPane (底层, 背景)
@@ -156,12 +161,8 @@ public class MainApp extends Application {
 
         for (int row = 0; row < BOARD_ROWS; row++) {
             for (int col = 0; col < BOARD_COLS; col++) {
-                 // 1. 【确认】final 变量在这里声明
-                final int finalRow = row;
-                final int finalCol = col;
-
                 // 2. 【确认】currentPos 在这里声明 (在 if 语句 *外部*)
-                Position currentPos = new Position(finalRow, finalCol);
+                Position currentPos = new Position(row, col);
                 Piece piece = board.getPiece(new Position(row, col));
 
                 if (piece != null) {
@@ -200,6 +201,8 @@ public class MainApp extends Application {
                     //    要使其中心在 (targetX, targetY), 左上角需要偏移 -radius
                     piecePane.setLayoutX(targetX - radius);
                     piecePane.setLayoutY(targetY - radius);
+
+                    piecePane.setUserData(currentPos);
                     // --- 【新】添加鼠标点击事件监听器 ---
                     piecePane.setOnMouseClicked(event -> {
                         handlePieceClick(currentPos, piece, piecePane); // 调用处理方法
@@ -367,56 +370,6 @@ public class MainApp extends Application {
         }
     }
 
-    /**
-     * 【新方法】 尝试执行走法并更新界面
-     * @param move 要尝试的走法
-     */
-    private void tryMove(Move move) {
-        // 1. 调用 Game 核心逻辑尝试走棋
-        boolean success = game.makeMove(move);
-
-        // 2. 如果走法成功
-        if (success) {
-            System.out.println("走法成功! 轮到 " + game.getCurrentPlayer());
-
-            // 3. 重新绘制整个棋盘
-            drawPieces(game.getBoard()); // 使用更新后的 board
-
-            // 4. 检查是否将死或逼和 (游戏结束)
-            Player nextPlayer = game.getCurrentPlayer();
-            if (game.isCheckmate(nextPlayer)) {
-                System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                System.out.println("      将死! " + (nextPlayer == Player.RED ? Player.BLACK : Player.RED) + " 胜利!");
-                System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                // TODO: 显示游戏结束画面, 禁用棋盘点击
-                pieceLayer.setDisable(true); // 简单禁用
-            } else if (game.isStalemate(nextPlayer)) {
-                System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                System.out.println("         逼和! (和棋)");
-                System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                pieceLayer.setDisable(true); // 简单禁用
-            }
-            // 5. 如果游戏未结束, 检查是否将军了对方
-            else if (game.isKingInCheck(nextPlayer)) {
-                System.out.println("*******************");
-                System.out.println("      将 军 !");
-                System.out.println("*******************");
-            }
-
-            // 6. 清除选中状态 (因为已经走完了)
-            selectedPiecePosition = null;
-            selectedPieceNode = null; // 高亮会自动在 redraw 时消失
-
-        }
-        // 7. 如果走法失败 (Game 核心逻辑会打印原因)
-        else {
-            System.out.println("走法失败, 请重试.");
-            // (可以选择取消选中, 或让用户重新选择目标)
-            // removeHighlight(selectedPieceNode);
-            // selectedPiecePosition = null;
-            // selectedPieceNode = null;
-        }
-    }
 
     /**
      * 【新方法】 创建用于显示合法走法提示的 Pane 层
@@ -462,6 +415,211 @@ public class MainApp extends Application {
      */
     private void clearMoveHighlights() {
         highlightLayer.getChildren().clear();
+    }
+
+    /**
+     * 【动画版】 尝试执行走法并更新界面
+     * @param move 要尝试的走法
+     */
+    private void tryMove(Move move) {
+        // --- 检查走法是否理论上可行 (但不真正执行) ---
+        // 我们需要先获取所有合法走法来验证, Game.makeMove 会做这个验证
+        // 为了避免重复计算, 我们先假设 move 合法, 让 game.makeMove 验证
+
+        // 1. 【注意】先保存当前选中的节点, 因为 game.makeMove 会改变状态
+        final StackPane nodeToMove = selectedPieceNode;
+        final Position fromPos = selectedPiecePosition; // 起始位置
+
+        // 2. 调用 Game 核心逻辑尝试走棋 (这会更新 board 和 currentPlayer)
+        boolean success = game.makeMove(move);
+
+        // 3. 如果走法成功
+        if (success && nodeToMove != null) {
+            System.out.println("走法成功! 轮到 " + game.getCurrentPlayer());
+
+            // 4. 计算目标像素位置
+            double margin = CELL_SIZE / 2.0;
+            double radius = CELL_SIZE * 0.4;
+            double targetLayoutX = margin + move.to().col() * CELL_SIZE - radius;
+            double targetLayoutY = margin + move.to().row() * CELL_SIZE - radius;
+
+            // 5. 创建平移动画
+            TranslateTransition animation = new TranslateTransition(Duration.millis(250), nodeToMove); // 动画时长 250ms
+            
+            // 【重要】TranslateTransition 是 *相对* 偏移
+            // 我们需要计算从当前 LayoutX/Y 到目标 LayoutX/Y 的 *差值*
+            // 但是, 我们用的是 Pane 布局, nodeToMove 的 TranslateX/Y 默认是 0
+            // 我们应该直接设置最终的 TranslateX/Y (相对于其原始 LayoutX/Y)
+            // 不对, TranslateTransition 的 setToX/Y 就是设置最终的 *Translate* 值
+            
+            // 我们需要移动的距离 = 目标 Layout - 当前 Layout
+            double deltaX = targetLayoutX - nodeToMove.getLayoutX();
+            double deltaY = targetLayoutY - nodeToMove.getLayoutY();
+            
+            animation.setToX(deltaX);
+            animation.setToY(deltaY);
+
+
+            // 6. 【关键】设置动画结束事件
+            animation.setOnFinished(e -> {
+                // a. 动画结束, 此时棋子在视觉上已到达新位置
+                // b. 【重要】现在才使用 game.getBoard() (已经是走棋后的状态) 重新绘制棋盘
+                //    这会正确处理吃子 (被吃的棋子消失), 并将移动的棋子放在最终的正确位置
+                drawPieces(game.getBoard()); 
+                
+                // c. 检查游戏结束条件
+                checkGameEndConditions();
+
+                // d. 清除选中状态
+                selectedPiecePosition = null;
+                selectedPieceNode = null;
+            });
+
+            // 7. 清除走法提示 (在动画开始前)
+            clearMoveHighlights();
+            
+            // 8. 播放动画
+            animation.play();
+
+            // 注意: 我们 *不* 在这里清除 selectedPiecePosition / Node
+            // 也不在这里检查游戏结束, 这些都推迟到动画结束后执行
+
+        }
+        // 9. 如果走法失败
+        else {
+            System.out.println("走法失败, 请重试.");
+            // 清除选中和提示
+            clearMoveHighlights();
+            if(selectedPieceNode != null) {
+                removeHighlight(selectedPieceNode);
+            }
+            selectedPiecePosition = null;
+            selectedPieceNode = null;
+        }
+    }
+
+    /**
+     * 【修改版】 检查游戏结束条件, 并在轮到 AI 时触发 AI 回合
+     */
+    private void checkGameEndConditions() {
+        Player nextPlayer = game.getCurrentPlayer();
+        boolean gameOver = false;
+
+        if (game.isCheckmate(nextPlayer)) {
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            System.out.println("      将死! " + (nextPlayer == Player.RED ? Player.BLACK : Player.RED) + " 胜利!");
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            pieceLayer.setDisable(true); // 禁用棋盘
+            gameOver = true;
+        } else if (game.isStalemate(nextPlayer)) {
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            System.out.println("         逼和! (和棋)");
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            pieceLayer.setDisable(true);
+            gameOver = true;
+        } else if (game.isKingInCheck(nextPlayer)) {
+            System.out.println("*******************");
+            System.out.println("      将 军 !");
+            System.out.println("*******************");
+        }
+
+        // --- 【新】如果游戏未结束, 并且轮到 AI (黑方) ---
+        if (!gameOver && nextPlayer == Player.BLACK) {
+            // 触发 AI 思考和走棋
+            triggerAiTurn();
+        }
+        // --- AI 触发结束 ---
+        else if (!gameOver && nextPlayer == Player.RED) {
+             // 如果轮到人类玩家, 确保棋盘是可点击的
+             pieceLayer.setDisable(false);
+             System.out.println("轮到你了 (RED)");
+        }
+    }
+
+    /**
+     * 【新方法】 触发 AI 思考并执行走法 (在 JavaFX 线程上运行)
+     */
+    private void triggerAiTurn() {
+        System.out.println("轮到 AI (BLACK) 思考...");
+        // 暂时禁用用户输入, 防止在 AI 思考或动画期间点击
+        pieceLayer.setDisable(true);
+
+        // --- AI 思考 (会冻结 GUI) ---
+        // (我们暂时不使用后台线程)
+        final int AI_DEPTH = 3; // AI 思考深度
+        long startTime = System.currentTimeMillis();
+        Move aiMove = aiEngine.findBestMove(game, AI_DEPTH);
+        long endTime = System.currentTimeMillis();
+        System.out.println("AI 思考用时: " + (endTime - startTime) + " 毫秒");
+        // --- AI 思考结束 ---
+
+        if (aiMove != null) {
+            System.out.println("AI 选择走法: " + aiMove);
+
+            // 获取要移动的棋子图形节点
+            StackPane aiNodeToMove = getNodeForPosition(aiMove.from());
+
+            // 1. 先在逻辑上执行移动 (这会更新 board 和 currentPlayer 到 RED)
+            boolean success = game.makeMove(aiMove); // 使用 game.makeMove 来处理吃子打印等
+
+            if (success && aiNodeToMove != null) {
+                // 2. 计算动画目标位置
+                double margin = CELL_SIZE / 2.0;
+                double radius = CELL_SIZE * 0.4;
+                double targetLayoutX = margin + aiMove.to().col() * CELL_SIZE - radius;
+                double targetLayoutY = margin + aiMove.to().row() * CELL_SIZE - radius;
+                double deltaX = targetLayoutX - aiNodeToMove.getLayoutX();
+                double deltaY = targetLayoutY - aiNodeToMove.getLayoutY();
+
+                // 3. 创建并播放 AI 移动的动画
+                TranslateTransition aiAnimation = new TranslateTransition(Duration.millis(250), aiNodeToMove);
+                aiAnimation.setToX(deltaX);
+                aiAnimation.setToY(deltaY);
+
+                // 4. AI 动画结束后
+                aiAnimation.setOnFinished(e -> {
+                    // a. 重新绘制棋盘以反映 AI 移动和可能的吃子
+                    drawPieces(game.getBoard());
+                    // b. 再次检查游戏状态 (这次是检查 AI 走完后人类玩家的状态)
+                    checkGameEndConditions(); // 这个调用现在会检查 RED 的状态
+                    // c. 在 checkGameEndConditions 内部, 如果轮到 RED, 会自动 re-enable pieceLayer
+                });
+                aiAnimation.play();
+
+            } else {
+                 System.err.println("AI 走法失败或找不到节点? Move: " + aiMove + ", Node: " + aiNodeToMove);
+                 // 如果 AI 走棋失败 (理论上不应发生), 重新启用输入
+                 pieceLayer.setDisable(false);
+            }
+
+        } else {
+            // AI 无法找到走法 (将死或逼和), checkGameEndConditions 应该已经处理了
+            System.err.println("AI 无法找到走法 (游戏应该已结束).");
+            // (安全起见)
+             pieceLayer.setDisable(false);
+        }
+    }
+
+    // ... (其他方法 tryMove, handlePieceClick 等保持不变) ...
+    // ... (main 方法) ...
+
+        /**
+     * 【新辅助方法】 根据棋盘位置查找对应的棋子图形节点 (StackPane)
+     * @param position 要查找的位置
+     * @return 对应的 StackPane, 如果该位置为空或未找到则返回 null
+     */
+    private StackPane getNodeForPosition(Position position) {
+        if (position == null) return null;
+        // 遍历 pieceLayer 上的所有子节点 (棋子图形)
+        for (javafx.scene.Node node : pieceLayer.getChildren()) {
+            if (node.getUserData() instanceof Position currentPos) {
+                // 检查存储在 UserData 中的位置是否匹配
+                if (currentPos.equals(position)) {
+                    return (StackPane) node;
+                }
+            }
+        }
+        return null; // 没有找到
     }
 
     // ... (main 方法) ...
