@@ -4,6 +4,7 @@ package com.dyouwang.xiangqi.messages;
 import com.dyouwang.xiangqi.Player;
 import com.dyouwang.xiangqi.Piece; // 需要 Piece 来定义棋盘状态
 import com.dyouwang.xiangqi.Position; // 需要 Position
+import com.dyouwang.xiangqi.Move;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +17,7 @@ public class GameStateMessage extends BaseMessage {
     public boolean isCheck; // 当前玩家是否被将军
     public boolean isCheckmate;
     public boolean isStalemate;
+    public Move lastMove = null;
 
     // 内部类, 用于简化棋子信息传输
     public static class SimplePieceInfo {

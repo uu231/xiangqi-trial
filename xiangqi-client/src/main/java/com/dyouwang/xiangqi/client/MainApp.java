@@ -45,7 +45,6 @@ public class MainApp extends Application {
 
     // --- 【新】用于跟踪用户交互 ---
     private Position selectedPiecePosition = null; // 当前选中的棋子位置, null表示未选中
-    private StackPane selectedPieceNode = null;   // 当前选中的棋子图形 (用于高亮)
     private List<Position> availableMovePositions = new ArrayList<>(); // 【新】存储当前选中棋子的合法走法
     
     @Override
@@ -72,33 +71,37 @@ public class MainApp extends Application {
         highlightLayer = createHighlightLayer();
         //drawPieces(board); // <--- 调用新的绘制方法
         
+       // --- 【修改】为棋盘背景 (Pane) 添加点击事件 ---
         pieceLayer.setOnMouseClicked(event -> {
-            // 只有在选中了棋子的情况下才处理背景点击
-            if (selectedPiecePosition != null) {
-                // 1. 计算点击位置对应的棋盘坐标 (row, col)
-                double clickX = event.getX();
-                double clickY = event.getY();
-                double margin = CELL_SIZE / 2.0;
+            // 1. 计算点击位置对应的棋盘坐标 (row, col)
+            double clickX = event.getX();
+            double clickY = event.getY();
+            double margin = CELL_SIZE / 2.0;
 
-                // 反推行列号 (注意需要考虑 margin)
-                int col = (int) Math.round((clickX - margin) / CELL_SIZE);
-                int row = (int) Math.round((clickY - margin) / CELL_SIZE);
-                Position targetPos = new Position(row, col);
+            int col = (int) Math.round((clickX - margin) / CELL_SIZE);
+            int row = (int) Math.round((clickY - margin) / CELL_SIZE);
+            Position targetPos = new Position(row, col);
 
-                // 2. 检查计算出的坐标是否有效, 并且目标位置确实是空的
-                if (targetPos.isValid() && game.getBoard().getPiece(targetPos) == null) {
-                    handleEmptySquareClick(targetPos); // 调用新的处理方法
+            // 2. 检查坐标是否有效
+            if (targetPos.isValid()) {
+                // 3. 检查这个位置是空还是有棋子
+                Piece pieceAtTarget = game.getBoard().getPiece(targetPos);
+                
+                if (pieceAtTarget == null) {
+                    // a. 点击的是空位
+                    handleEmptySquareClick(targetPos);
                 } else {
-                    // 点击在了棋盘外或者有棋子的地方 (棋子点击由棋子自己的事件处理)
-                    // 可以选择取消选中
-                    // removeHighlight(selectedPieceNode);
-                    // selectedPiecePosition = null;
-                    // selectedPieceNode = null;
-                    // System.out.println("点击无效或已有棋子, 取消选中");
+                    // b. 点击的是有棋子的地方
+                    //    棋子自己的 setOnMouseClicked 会处理 (见 drawPieces)
+                    //    但如果点击的是 *已经选中* 的棋子 (取消选中)?
+                    //    (handlePieceClick 已经处理了: 重新选中)
+                    System.out.println("背景点击侦测到棋子, 已忽略 (交由棋子点击事件处理)");
                 }
+            } else {
+                 System.out.println("点击在棋盘外");
+                 clearLocalSelection(); // 点击棋盘外, 取消选中
             }
         });
-        // --- 背景点击事件结束 ---
         // --- 【修改】使用 StackPane 将四层叠加 ---
         StackPane root = new StackPane();
         // 底层 boardGrid, 然后 canvas, 然后 pieceLayer, 最顶层 highlightLayer
@@ -206,8 +209,12 @@ public class MainApp extends Application {
 
                     piecePane.setUserData(currentPos);
                     // --- 【新】添加鼠标点击事件监听器 ---
+                    final Position posForLambda = currentPos; 
+                    final Piece pieceForLambda = piece;
+                    final StackPane nodeForLambda = piecePane;
                     piecePane.setOnMouseClicked(event -> {
-                        handlePieceClick(currentPos, piece, piecePane); // 调用处理方法
+                        // 【修改】调用只带一个 Position 参数的版本
+                        handlePieceClick(posForLambda);
                     });
                     // --- 事件监听器结束 ---
 
@@ -223,64 +230,74 @@ public class MainApp extends Application {
     // ... (drawPieces 方法结束) ...
 
     /**
-     * 【新方法】 处理棋子点击事件
-     * @param clickedPos  被点击的棋子的位置
-     * @param clickedPiece 被点击的棋子对象
-     * @param clickedNode  被点击的棋子的图形 (StackPane)
+     * 【高亮修复版】 处理棋子点击事件 (只接收 Position)
      */
-    /**
-     * 【修改版】 处理棋子点击事件
-     */
-    private void handlePieceClick(Position clickedPos, Piece clickedPiece, StackPane clickedNode) {
+    private void handlePieceClick(Position clickedPos) {
+        // 1. 根据点击的 Position 获取 Piece 和 Node
+        Piece clickedPiece = game.getBoard().getPiece(clickedPos);
+        StackPane clickedNode = getNodeForPosition(clickedPos); // 获取新点击的节点
+
+        if (clickedPiece == null || clickedNode == null) {
+             System.err.println("错误: 点击位置或节点无效! Pos: " + clickedPos);
+             return;
+        }
+
         System.out.println("点击了: " + clickedPiece.getPlayer() + " " + clickedPiece.getName() + " 在 " + clickedPos);
 
-        // --- 逻辑 1: 点击的是当前玩家的棋子 ---
-        if (clickedPiece.getPlayer() == game.getCurrentPlayer()) {
-            if (selectedPieceNode != null) {
-                removeHighlight(selectedPieceNode);
-            }
-            // 清除之前的走法提示
-            clearMoveHighlights();
+        // 2. 检查是否轮到当前玩家
+        if (myPlayer == null || game.getCurrentPlayer() != myPlayer) {
+            System.out.println("点击无效 (非本人回合)");
+            clearLocalSelection(); // 非本人回合, 清除任何本地选中
+            return;
+        }
 
-            selectedPiecePosition = clickedPos;
-            selectedPieceNode = clickedNode;
-            applyHighlight(selectedPieceNode);
+        // --- 逻辑 1: 点击的是当前玩家的棋子 (选择/切换选择) ---
+        if (clickedPiece.getPlayer() == myPlayer) {
+            
+            // 【关键修复】 检查 "selectedPiecePosition" (位置) 而不是 "selectedPieceNode"
+            if (selectedPiecePosition != null) {
+                 // 如果之前有一个位置被选中了...
+                 // 通过那个旧位置找到旧的节点
+                 StackPane oldSelectedNode = getNodeForPosition(selectedPiecePosition);
+                 if (oldSelectedNode != null) {
+                     removeHighlight(oldSelectedNode); // 移除旧高亮
+                 }
+            }
+            clearMoveHighlights(); // 清除旧提示
+
+            selectedPiecePosition = clickedPos;  // 记录新选中的位置
+            applyHighlight(clickedNode);       // 高亮新节点
             System.out.println("选中了 " + clickedPiece.getName());
 
-            // --- 【新】获取并显示合法走法 ---
-            List<Move> validMoves = game.getAllValidMoves(game.getCurrentPlayer()); // 获取当前玩家所有棋子的所有合法走法
-            availableMovePositions.clear(); // 清空旧列表
-            // 筛选出 *当前选中棋子* 的走法
+            // 重新计算并显示合法走法 (不变)
+            List<Move> validMoves = game.getAllValidMoves(game.getCurrentPlayer());
+            availableMovePositions.clear();
             for (Move move : validMoves) {
                 if (move.from().equals(selectedPiecePosition)) {
-                    availableMovePositions.add(move.to()); // 只记录目标位置
+                    availableMovePositions.add(move.to());
                 }
             }
-            showMoveHighlights(availableMovePositions); // 调用新方法显示提示
-            // --- 显示结束 ---
-
+            showMoveHighlights(availableMovePositions);
         }
         // --- 逻辑 2: 点击的是对方棋子 (尝试吃子) ---
-        else if (selectedPiecePosition != null) {
-            System.out.println("尝试从 " + selectedPiecePosition + " 移动到 " + clickedPos + " (吃子)");
+        else if (selectedPiecePosition != null) { 
+            // ... (这部分逻辑不变, 它已经依赖 selectedPiecePosition) ...
             Move move = new Move(selectedPiecePosition, clickedPos);
-            // 【修改】在尝试移动前清除提示
-            clearMoveHighlights();
-            tryMove(move);
+            if (availableMovePositions.contains(move.to())) {
+                System.out.println("尝试从 " + selectedPiecePosition + " 移动到 " + clickedPos + " (吃子)");
+                clearMoveHighlights();
+                tryMove(move); 
+            } else {
+                System.out.println("非法移动目标 (吃子): " + clickedPos);
+                clearLocalSelection(); 
+            }
         }
-        // --- 逻辑 3: 点击无效 ---
+        // --- 逻辑 3: 点击无效 (未选中棋子点击对方棋子) ---
         else {
-             System.out.println("点击无效 (非当前玩家棋子, 或未选中棋子)");
-             // 【修改】如果点击无效，也清除提示和选中
-             if (selectedPieceNode != null) {
-                 removeHighlight(selectedPieceNode);
-                 selectedPieceNode = null;
-             }
-             selectedPiecePosition = null;
-             clearMoveHighlights();
+             System.out.println("点击无效 (未选中棋子, 且点击了对方棋子)");
+             clearLocalSelection();
         }
     }
-
     /**
      * 【新方法】 应用高亮效果 (简单示例: 改变边框颜色)
      */
@@ -359,16 +376,29 @@ public class MainApp extends Application {
      * 【新方法】 处理空位点击事件 (尝试移动)
      * @param targetPos 被点击的空位的位置
      */
+/**
+     * 【修复版】 处理空位点击事件
+     */
     private void handleEmptySquareClick(Position targetPos) {
-        // 只有在选中了棋子的情况下才处理
-        if (selectedPiecePosition != null) {
-            System.out.println("尝试从 " + selectedPiecePosition + " 移动到空位 " + targetPos);
+        // 检查: 是否已选中棋子? 是否是我的回合?
+        if (selectedPiecePosition != null && myPlayer != null && game.getCurrentPlayer() == myPlayer) {
+
             Move move = new Move(selectedPiecePosition, targetPos);
-            clearMoveHighlights();
-            tryMove(move); // 调用统一的移动处理方法
+
+            // 【关键修复】 检查这一步移动是否在合法列表中!
+            if (availableMovePositions.contains(move.to())) {
+                System.out.println("尝试从 " + selectedPiecePosition + " 移动到空位 " + targetPos);
+                clearMoveHighlights();
+                tryMove(move); // 合法, 才调用 tryMove
+            } else {
+                // 非法空位点击, 视为无效点击
+                System.out.println("非法移动目标 (空位): " + targetPos);
+                // 取消选中
+                clearLocalSelection();
+            }
         } else {
-            System.out.println("点击空位无效 (未选中棋子)");
-            clearMoveHighlights();
+             System.out.println("点击空位无效 (未选中棋子 或 非本人回合)");
+             clearLocalSelection(); // 清除任何残留的选中状态
         }
     }
 
@@ -500,41 +530,45 @@ public class MainApp extends Application {
     //     }
     // }
 
-    /**
-     * 【网络版】 尝试将走法发送给服务器
+/**
+     * 【网络+动画 V2 修复版】 尝试执行走法, 发送消息, 并播放预期动画
      */
     private void tryMove(Move move) {
         System.out.println("DEBUG: Entering tryMove for move: " + move);
-        // 检查是否轮到当前玩家走棋 (客户端也做一次校验)
-        // (需要知道自己是哪个玩家, 服务器连接成功后应该告诉我们)
-// --- 【修改】使用 myPlayer 变量进行检查 ---
-        if (this.myPlayer == null) {
-            System.out.println("错误: 角色尚未分配!");
-            return;
-        }
+
+        // --- 回合检查 (不变) ---
+        if (this.myPlayer == null) { System.out.println("错误: 角色尚未分配!"); return; }
         if (game.getCurrentPlayer() != this.myPlayer) {
              System.out.println("还未轮到你 (" + this.myPlayer + ") 走棋! 当前轮到: " + game.getCurrentPlayer());
-             // 清除选中和提示
-             // ... (清除代码不变) ...
+             clearLocalSelection(); // 清除本地状态
              return;
         }
         // --- 回合检查结束 ---
 
-        // 【修改】不再调用 game.makeMove, 而是发送消息
+        // --- 【关键修复】 ---
+        // 在 tryMove 内部根据 selectedPiecePosition (即 move.from()) 查找要移动的 Node
+        final StackPane nodeToMove = getNodeForPosition(move.from()); // <--- 修复!
+        
+        if (nodeToMove == null) {
+            // 这种情况理论上不应发生, 因为 selectedPiecePosition 必须有节点
+            System.err.println("错误: 找不到要移动的图形节点! Pos: " + move.from());
+            // 节点找不到, 但走法是合法的, 仍然发送消息
+             if (serverConnector != null) { serverConnector.sendMove(move); }
+             clearLocalSelection(); // 清除本地状态
+             return; // 无法播放动画, 提前返回
+        }
+        // --- 修复结束 ---
+
+
+        // --- 发送网络消息 (不变) ---
         if (serverConnector != null) {
             serverConnector.sendMove(move);
         }
+        // --- 网络消息发送结束 ---
 
-        // 清除本地的选中和提示 (无论服务器是否接受, 先清除)
-        clearMoveHighlights();
-        if (selectedPieceNode != null) {
-            removeHighlight(selectedPieceNode);
-        }
-        selectedPiecePosition = null;
-        selectedPieceNode = null;
-
-        // 【删除】动画逻辑移到接收服务器状态更新后处理
-        // 【删除】本地 checkGameEndConditions 逻辑
+        // --- 清除本地选中和提示 (不变) ---
+        clearLocalSelection();
+        // --- 清除结束 ---
     }
 
     /**
@@ -663,15 +697,15 @@ public class MainApp extends Application {
 
     // ... (在 main 方法上面) ...
 
-    /**
-     * 【修改版】 当收到服务器的 GameStateMessage 时调用
+/**
+     * 【动画V2版】 当收到服务器的 GameStateMessage 时调用
      */
     public void updateGameFromState(GameStateMessage gameState) {
         System.out.println("收到游戏状态更新: 当前玩家 " + gameState.currentPlayer);
 
-        // 1. 【修改】根据消息内容构建新的 Board 对象
-        Board newBoard = new Board(); // 创建一个空的 Board
-        for (int r=0; r<10; r++) for (int c=0; c<9; c++) newBoard.clearPiece(new Position(r,c)); // 确保清空
+        // 1. 构建新的 Board (不变)
+        Board newBoard = new Board(); 
+        for (int r=0; r<10; r++) for (int c=0; c<9; c++) newBoard.clearPiece(new Position(r,c));
         for (GameStateMessage.SimplePieceInfo pieceInfo : gameState.pieces) {
              Piece piece = createPieceFromName(pieceInfo.name, pieceInfo.player, new Position(pieceInfo.row, pieceInfo.col));
              if (piece != null) {
@@ -679,47 +713,46 @@ public class MainApp extends Application {
              }
         }
 
-        // 2. 【修改】更新客户端本地 Game 对象的状态
-        this.game.setBoard(newBoard);           // 更新棋盘
-        this.game.setCurrentPlayer(gameState.currentPlayer); // 更新当前玩家
+        // 2. 【动画逻辑】 检查 lastMove
+        Move lastMove = gameState.lastMove;
+        if (lastMove != null) {
+            // a. 发生了移动, 需要播放动画
+            System.out.println("DEBUG: 收到带 lastMove 的状态, 准备播放动画: " + lastMove);
 
-        // 3. 重新绘制棋子层 (使用更新后的 game.getBoard())
-        drawPieces(this.game.getBoard());
-
-        // 4. 检查游戏结束或将军状态 (现在可以使用本地 game 对象了)
-        Player nextPlayer = this.game.getCurrentPlayer(); // 使用本地 game 对象
-        boolean gameOver = false;
-        // (检查 isCheckmate, isStalemate, isKingInCheck 的逻辑不变)
-        if (this.game.isCheckmate(nextPlayer)) { // 使用本地 game 对象
-            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            System.out.println("      将死! " + (nextPlayer == Player.RED ? Player.BLACK : Player.RED) + " 胜利!");
-            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            pieceLayer.setDisable(true);
-            gameOver = true;
-        } else if (this.game.isStalemate(nextPlayer)) { // 使用本地 game 对象
-            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            System.out.println("         逼和! (和棋)");
-            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            pieceLayer.setDisable(true);
-            gameOver = true;
-        } else if (this.game.isKingInCheck(nextPlayer)) { // 使用本地 game 对象
-            System.out.println("*******************");
-            System.out.println("      将 军 !");
-            System.out.println("*******************");
-        }
-
-
-        // 5. 根据当前玩家启用/禁用输入
-        if (!gameOver) {
-            if (this.game.getCurrentPlayer() == this.myPlayer) {
-                pieceLayer.setDisable(false); // 轮到我, 启用
-                System.out.println("轮到你了 (" + this.myPlayer + ")");
-            } else {
-                pieceLayer.setDisable(true); // 轮到对方, 禁用
-                System.out.println("等待对方 (" + this.game.getCurrentPlayer() + ") 走棋...");
+            // b. 找到要移动的那个棋子图形
+            // 【重要】我们必须在 *重绘 (drawPieces)* 之前找到它
+            StackPane nodeToMove = getNodeForPosition(lastMove.from());
+            if (nodeToMove == null) {
+                 System.err.println("错误: 找不到要播放动画的节点! Pos: " + lastMove.from());
+                 // 找不到节点, 立即重绘
+                 updateBoardAndCheckStatus(newBoard, gameState);
+                 return;
             }
+
+            // c. 计算动画
+            double margin = CELL_SIZE / 2.0;
+            double radius = CELL_SIZE * 0.4;
+            double targetLayoutX = margin + lastMove.to().col() * CELL_SIZE - radius;
+            double targetLayoutY = margin + lastMove.to().row() * CELL_SIZE - radius;
+            double deltaX = targetLayoutX - nodeToMove.getLayoutX();
+            double deltaY = targetLayoutY - nodeToMove.getLayoutY();
+
+            // d. 创建并播放动画
+            TranslateTransition animation = new TranslateTransition(Duration.millis(250), nodeToMove);
+            animation.setToX(deltaX);
+            animation.setToY(deltaY);
+
+            // e. 【关键】在动画结束后, 才更新状态和重绘
+            animation.setOnFinished(e -> {
+                System.out.println("DEBUG: 服务器驱动的动画已结束, 正在重绘棋盘");
+                updateBoardAndCheckStatus(newBoard, gameState);
+            });
+            animation.play();
+
         } else {
-            pieceLayer.setDisable(true); // 游戏结束, 禁用
+            // f. 没有 lastMove (例如: 初始连接), 立即更新
+            System.out.println("DEBUG: 收到无 lastMove 的状态, 立即重绘棋盘");
+            updateBoardAndCheckStatus(newBoard, gameState);
         }
     }
 
@@ -740,6 +773,54 @@ public class MainApp extends Application {
         // 需要 import 所有 Piece 子类
     }
 
+    /**
+     * 【新辅助方法】 更新本地 Game 状态, 重绘棋盘, 并检查结束条件
+     */
+    private void updateBoardAndCheckStatus(Board newBoard, GameStateMessage gameState) {
+        // 1. 更新客户端本地 Game 对象的状态
+        this.game.setBoard(newBoard);
+        this.game.setCurrentPlayer(gameState.currentPlayer);
+
+        // 2. 重新绘制棋子层 (使用更新后的 game.getBoard())
+        drawPieces(this.game.getBoard());
+
+        // 3. 检查游戏结束或将军状态
+        Player nextPlayer = this.game.getCurrentPlayer();
+        boolean gameOver = false;
+        if (this.game.isCheckmate(nextPlayer)) { /* ... 将死逻辑不变 ... */ 
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            System.out.println("      将死! " + (nextPlayer == Player.RED ? Player.BLACK : Player.RED) + " 胜利!");
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            pieceLayer.setDisable(true);
+            gameOver = true;
+        }
+        else if (this.game.isStalemate(nextPlayer)) { /* ... 逼和逻辑不变 ... */ 
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            System.out.println("         逼和! (和棋)");
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            pieceLayer.setDisable(true);
+            gameOver = true;
+        }
+        else if (this.game.isKingInCheck(nextPlayer)) { /* ... 将军逻辑不变 ... */ 
+            System.out.println("*******************");
+            System.out.println("      将 军 !");
+            System.out.println("*******************");
+        }
+
+        // 4. 根据当前玩家启用/禁用输入
+        if (!gameOver) {
+            if (this.game.getCurrentPlayer() == this.myPlayer) {
+                pieceLayer.setDisable(false); // 轮到我, 启用
+                System.out.println("轮到你了 (" + this.myPlayer + ")");
+            } else {
+                pieceLayer.setDisable(true); // 轮到对方, 禁用
+                System.out.println("等待对方 (" + this.game.getCurrentPlayer() + ") 走棋...");
+            }
+        } else {
+            pieceLayer.setDisable(true); // 游戏结束, 禁用
+        }
+    }
+
     // ... (在 main 方法上面) ...
 
     /**
@@ -753,11 +834,28 @@ public class MainApp extends Application {
             stage.setTitle("Xiangqi Game - " + player);
         }
     }
-    // 需要将 Stage stage 提升为成员变量才能在 setMyPlayer 中访问
-    // 在 MainApp 类顶部添加:
-    // private Stage stage;
-    // 在 start 方法开头添加:
-    // this.stage = stage;
+    
+    /**
+     * 【高亮修复版】 清除所有本地选中状态和高亮
+     */
+    private void clearLocalSelection() {
+        // 清除高亮提示
+        clearMoveHighlights(); 
+        
+        // 如果有棋子被选中, 移除它的高亮
+        if (selectedPiecePosition != null) {
+            // 尝试通过位置找到节点并移除高亮
+            StackPane oldSelectedNode = getNodeForPosition(selectedPiecePosition);
+            if (oldSelectedNode != null) {
+                removeHighlight(oldSelectedNode);
+            }
+        }
+
+        // 重置状态变量
+        selectedPiecePosition = null;
+        // selectedPieceNode = null; // <-- 这一行已被删除 (因为成员变量被删了)
+        availableMovePositions.clear();
+    }
 
     // ... (main 方法) ...
 

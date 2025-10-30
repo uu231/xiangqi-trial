@@ -145,7 +145,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         if (success) {
             logger.info("玩家 {} 走棋成功: {} -> {}", currentPlayer, move.from(), move.to());
             // 向 *所有* 玩家广播更新后的游戏状态
-            broadcastGameState();
+            broadcastGameState(move);
         }
         // 5. 如果走法失败
         else {
@@ -157,11 +157,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /**
-     * 【新】向所有连接的玩家广播当前游戏状态
+
+/**
+     * 【新】向所有玩家广播 (带走法)
      */
-    private void broadcastGameState() {
-        GameStateMessage gameState = createGameStateMessage();
+    private void broadcastGameState(Move lastMove) {
+        GameStateMessage gameState = createGameStateMessage(lastMove); // Call the version WITH Move
         logger.info("广播游戏状态: 当前玩家 {}", gameState.currentPlayer);
         for (WebSocketSession playerSession : players.values()) {
             sendMessage(playerSession, gameState);
@@ -169,18 +170,31 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 【新】向指定的 Session 发送当前游戏状态
+     * 【旧】向所有玩家广播 (无走法, 用于初始连接)
      */
-    private void sendGameState(WebSocketSession session) {
-        GameStateMessage gameState = createGameStateMessage();
+    private void broadcastGameState() {
+        broadcastGameState(null); // Call the new method with null
+    }
+/**
+     * 【新】向指定 Session 发送 (带走法)
+     */
+    private void sendGameState(WebSocketSession session, Move lastMove) {
+        GameStateMessage gameState = createGameStateMessage(lastMove); // Call the version WITH Move
         logger.info("向 Session {} 发送游戏状态", session.getId());
         sendMessage(session, gameState);
     }
 
     /**
+     * 【旧】向指定 Session 发送 (无走法)
+     */
+    private void sendGameState(WebSocketSession session) {
+        sendGameState(session, null); // Call the new method with null
+    }
+
+    /**
      * 【新】根据当前 Game 对象创建 GameStateMessage
      */
-    private GameStateMessage createGameStateMessage() {
+    private GameStateMessage createGameStateMessage(Move lastMove) {
         GameStateMessage msg = new GameStateMessage();
         Board board = game.getBoard();
         // 填充棋子信息
@@ -197,6 +211,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         msg.isCheck = game.isKingInCheck(msg.currentPlayer);
         msg.isCheckmate = game.isCheckmate(msg.currentPlayer);
         msg.isStalemate = game.isStalemate(msg.currentPlayer);
+        msg.lastMove = lastMove; // 【新】设置 lastMove
         return msg;
     }
 
