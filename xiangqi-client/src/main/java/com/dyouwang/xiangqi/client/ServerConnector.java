@@ -85,10 +85,19 @@ public class ServerConnector {
         }
     }
 
+    // ... (在 ServerConnector.java 中) ...
+
+    public boolean isConnected() {
+        return client != null && client.isOpen();
+    }
+
     public void connect() {
-        if (client != null && !client.isOpen()) {
+        // 在连接前检查
+        if (client != null && !client.isOpen()) { 
             System.out.println("尝试连接到 WebSocket 服务器...");
             client.connect(); // 异步连接
+        } else if (client != null && client.isOpen()) {
+            System.out.println("已经连接到服务器。");
         }
     }
 
