@@ -1,99 +1,113 @@
-# Java 中国象棋 (Xiangqi) 项目
+# Java 中国象棋 (Xiangqi) 项目 - 网络版 V1
 
-这是一个使用 Java 语言从零开始构建的中国象棋项目。
+这是一个使用 Java 语言从零开始构建的、支持网络对战的中国象棋项目。
 
-本项目旨在开发一个全栈象棋应用，目前已完成**核心游戏逻辑**、**基础 AI**，并拥有一个初步的**图形用户界面 (GUI)**。
+本项目采用 **客户端/服务器 (Client/Server)** 架构，实现了核心游戏逻辑、基础 AI (Minimax)，并通过 WebSocket 实现了基础的双人在线对战功能。
 
-## 📍 当前状态 (GUI V1)
+## 📍 当前状态 (Client/Server V1)
 
-目前的项目包含：
-1.  **核心引擎 (`xiangqi-core`):** 一个功能完备的库，包含所有中国象棋规则、"将军"/"将死"/"逼和"检测，以及一个基础的 Minimax AI（控制台可调用）。
-2.  **图形客户端 (`xiangqi-client`):** 一个使用 JavaFX 构建的图形界面应用，可以显示棋盘和棋子，并支持鼠标点击移动棋子进行双人对战。
+* **`xiangqi-core` (核心引擎):** 包含所有象棋规则、状态判断（将军/将死/逼和）及基础 Minimax AI 的库。
+* **`xiangqi-server` (服务器):** 使用 Spring Boot 和 WebSocket 构建的后端服务。
+    * 管理单个游戏实例。
+    * 处理 WebSocket 连接，为先连接者分配红方，后连接者分配黑方。
+    * 接收客户端通过 JSON 发送的走法 (`SendMoveMessage`)。
+    * 调用核心引擎验证并执行走法。
+    * 将更新后的游戏状态 (`GameStateMessage`) 通过 JSON 广播给所有连接的客户端。
+* **`xiangqi-client` (客户端):** 使用 JavaFX 构建的图形界面应用。
+    * 连接到 WebSocket 服务器。
+    * 接收服务器分配的角色 (`AssignPlayerMessage`)。
+    * 接收并解析服务器广播的游戏状态 (`GameStateMessage`)，实时更新棋盘显示。
+    * 支持鼠标点击棋子进行选中和移动。
+    * 将玩家的走法打包成 JSON (`SendMoveMessage`) 发送给服务器。
+    * 根据服务器状态禁用/启用本地操作，实现回合控制。
+    * 带有棋子移动动画（网络版暂未完全重构）。
 
-### 已实现的核心功能
+### 已实现功能
 
-* **后端 (`xiangqi-core`):**
-    * 完整的棋子移动逻辑 (`车`, `马`, `炮`, `将`, `士`, `象`, `兵`)
-    * 完整的游戏规则引擎 (`Game.java`)：
-        * 将军 (Check) 检测
-        * 将死 (Checkmate) / 逼和 (Stalemate) 检测
-        * 非法走法拦截（包括“自杀”走法）
-    * 基础 Minimax AI (`AIEngine.java`)：
-        * 基于子力评估的 `evaluate` 函数
-        * 递归 `minimax` 搜索算法（当前测试深度为 3）
-        * `findBestMove` 接口
-* **前端 (`xiangqi-client`):**
-    * 使用 JavaFX 绘制棋盘线条和背景。
-    * 使用 JavaFX 图形 (`Circle`, `Label`) 显示棋子。
-    * **棋子精确显示在交叉点上。**
-    * **支持鼠标点击交互：**
-        * 点击己方棋子进行选中（带金色高亮）。
-        * 点击合法目标位置（空位或敌方棋子）进行移动。
-        * 移动时带有简单的平移动画。
-    * 显示轮到哪方走。
-    * 在将军、将死、逼和时在**控制台**打印提示信息。
+* **核心引擎:**
+    * [✓] 所有棋子规则 (`车`, `马`, `炮`, `将`, `士`, `象`, `兵`)
+    * [✓] 游戏状态判断 (将军, 将死, 逼和)
+    * [✓] 合法走法生成 (包含防自杀逻辑)
+    * [✓] 基础 Minimax AI (基于子力评估, 深度 3)
+    * [✓] JSON 消息类定义 (`MessageType`, `BaseMessage`, `SendMoveMessage`, `GameStateMessage`, `ErrorMessage`, `AssignPlayerMessage`)
+* **服务器:**
+    * [✓] Spring Boot 基础框架
+    * [✓] WebSocket 端点 (`/game`) 及连接管理 (简化版)
+    * [✓] JSON 消息解析 (Jackson)
+    * [✓] 调用核心引擎处理走法
+    * [✓] 游戏状态广播
+    * [✓] 玩家角色分配 (简化版)
+* **客户端 (JavaFX):**
+    * [✓] 绘制棋盘和棋子 (圆形+文字)
+    * [✓] 棋子精确显示在交叉点
+    * [✓] WebSocket 客户端连接 (`ServerConnector`)
+    * [✓] JSON 消息发送与接收 (Jackson)
+    * [✓] 根据服务器状态更新 GUI
+    * [✓] 鼠标点击选中与移动请求发送
+    * [✓] 基本的回合控制 (界面禁用/启用)
+    * [✓] 基础移动动画 (待网络版重构)
 
 ---
 
 ## 🛠️ 技术栈
 
 * **语言：** Java 17
-* **构建：** Maven (多模块项目: `parent`, `core`, `client`)
-* **GUI：** JavaFX 17+ (Controls, FXML planned)
+* **构建：** Maven (多模块: `parent`, `core`, `client`, `server`)
+* **后端：** Spring Boot (Web, WebSocket)
+* **前端 GUI：** JavaFX 17+
+* **通信协议：** WebSocket + JSON (Jackson)
 * **版本控制：** Git & GitHub
 
 ---
 
-## 🚀 如何运行
-
-### 运行图形界面 (推荐)
+## 🚀 如何运行 (网络对战)
 
 1.  **克隆/下载本项目**
-2.  **进入项目根目录** (`xiangQi/`)
-3.  **使用 Maven 编译所有模块**：
-    ```bash
-    mvn clean install
-    ```
-4.  **运行 JavaFX 客户端**：
-    ```bash
-    # 如果你在 WSL + VcXsrv 环境, 确保 VcXsrv 正在运行并设置了 DISPLAY
-    # export DISPLAY=:0  (或者 localhost:0.0)
-    mvn -pl xiangqi-client javafx:run
-    ```
-5.  **如何游戏**：
-    * 用鼠标点击你要移动的棋子（必须是当前轮次的玩家）。
-    * 点击你想移动到的目标位置（空位或敌方棋子）。
-    * 如果走法合法，棋子会移动，并轮到对方。
-
-### (可选) 运行旧版控制台 AI 测试
-
-1.  (确保已执行 `mvn clean install`)
-2.  **运行核心模块的 App.java** (它包含 AI 测试代码)：
-    ```bash
-    mvn -pl xiangqi-core exec:java -Dexec.mainClass="com.dyouwang.xiangqi.App"
-    ```
+2.  **构建所有模块:**
+    * 在项目根目录 (`xiangQi/`) 运行：
+        ```bash
+        mvn clean install
+        ```
+3.  **启动服务器:**
+    * 在项目根目录运行：
+        ```bash
+        mvn -pl xiangqi-server spring-boot:run
+        ```
+    * 服务器将在 `localhost:8080` 启动并监听 `/game` 的 WebSocket 连接。
+4.  **启动第一个客户端 (将扮演红方):**
+    * 打开**第一个** WSL 终端窗口。
+    * 确保 X Server (如 VcXsrv) 正在运行并配置正确。
+    * 运行：
+        ```bash
+        export DISPLAY=:0 # 或 localhost:0.0
+        mvn -pl xiangqi-client javafx:run
+        ```
+    * 客户端窗口标题应显示 `... - RED`。
+5.  **启动第二个客户端 (将扮演黑方):**
+    * 打开**第二个** WSL 终端窗口。
+    * 运行：
+        ```bash
+        export DISPLAY=:0 # 或 localhost:0.0
+        mvn -pl xiangqi-client javafx:run
+        ```
+    * 客户端窗口标题应显示 `... - BLACK`。
+6.  **开始对战!**
+    * 在红方客户端窗口点击棋子进行移动。
+    * 棋盘状态将在两个客户端同步更新。
+    * 轮到黑方时，红方客户端的操作将被禁用，反之亦然。
 
 ---
 
 ## 🗺️ 未来项目蓝图 (Roadmap)
 
-我们已完成核心逻辑和基础 AI，并开始了 GUI 开发。
-
-* **[ ✓ ] 阶段一：核心游戏逻辑 (B2)**
-* **[ ✓ ] 阶段二：人工智能 (AI) (F4, B3)** (基础 Minimax)
-* **[ 进行中 ] 阶段三：前端 UI (JavaFX)**
-    * [ ✓ ] 搭建基础窗口和棋盘绘制 (F5)
-    * [ ✓ ] 显示棋子图形
-    * [ ✓ ] 实现鼠标点击选中和移动 (带动画 F2 部分)
-    * [ ] 显示合法走法提示 (视觉效果)
-    * [ ] 添加更美观的棋子图片/资源
-    * [ ] 实现吃子/将军/获胜的视觉效果/动画 (F2 完善)
-    * [ ] (远期) 探索 3D 视角 (F1)
-* **[ 待办 ] 阶段四：后端服务 (Spring Boot)**
-    * [ ] 搭建 Spring Boot 服务器
-    * [ ] 使用 WebSocket 实现联网对战 (B1)
-    * [ ] 实现用户登录 (F3) 及数据库
-    * [ ] 实现匹配/房间系统
-* **[ 待办 ] 阶段五：打包与部署**
-    * [ ] 使用 `jpackage` 打包跨平台客户端 (B5)
-    * [ ] 部署后端服务
+* **[ ✓ ] 阶段一：核心游戏逻辑**
+* **[ ✓ ] 阶段二：人工智能 (AI)** (基础 Minimax)
+* **[ ✓ ] 阶段三：前端 UI (JavaFX)** (基础 GUI 与交互)
+* **[ ✓ ] 阶段四：后端服务 (Spring Boot)** (基础 WebSocket 网络对战)
+* **[ 进行中 ] 完善与扩展:**
+    * **网络:** 匹配系统, 断线重连, 聊天
+    * **人机:** 在服务器集成 AI 对战
+    * **GUI:** 棋子图片, 美化提示, 效果动画 (吃子/将军/胜利)
+    * **AI:** Alpha-Beta 剪枝, 改进评估函数
+    * **3D:** (远期) 探索 3D 界面
+* **[ 待办 ] 阶段五：打包与部署** (jpackage, 云部署)
