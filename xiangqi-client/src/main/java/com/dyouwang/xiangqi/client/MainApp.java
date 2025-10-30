@@ -18,13 +18,8 @@ import javafx.stage.Stage;
 import javafx.animation.TranslateTransition;
 import javafx.util.Duration;
 
-import com.dyouwang.xiangqi.Board;
-import com.dyouwang.xiangqi.Game;
-import com.dyouwang.xiangqi.Piece;
-import com.dyouwang.xiangqi.Player;
-import com.dyouwang.xiangqi.Position;
-import com.dyouwang.xiangqi.Move;
-import com.dyouwang.xiangqi.AIEngine;
+import com.dyouwang.xiangqi.*;
+import com.dyouwang.xiangqi.messages.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +39,9 @@ public class MainApp extends Application {
     private Pane pieceLayer;
     private Pane highlightLayer; // 【新】用于显示合法走法提示
     private AIEngine aiEngine;
+    private ServerConnector serverConnector;
+    private Player myPlayer = null;
+    private Stage stage;
 
     // --- 【新】用于跟踪用户交互 ---
     private Position selectedPiecePosition = null; // 当前选中的棋子位置, null表示未选中
@@ -52,8 +50,12 @@ public class MainApp extends Application {
     
     @Override
     public void start(Stage stage) {
+        this.stage = stage;
         game = new Game();
-        aiEngine = new AIEngine();
+        //aiEngine = new AIEngine();
+
+        serverConnector = new ServerConnector("ws://localhost:8080/game", this); // 把 this (MainApp 实例) 传进去
+        serverConnector.connect();
         Board board = game.getBoard();
 
         // 1. 创建 GridPane (底层, 背景)
@@ -68,7 +70,7 @@ public class MainApp extends Application {
         // 3. 【改】创建 Pane (顶层, 用于手动放置棋子)
         pieceLayer = createPieceLayer(); // 现在返回 Pane
         highlightLayer = createHighlightLayer();
-        drawPieces(board); // <--- 调用新的绘制方法
+        //drawPieces(board); // <--- 调用新的绘制方法
         
         pieceLayer.setOnMouseClicked(event -> {
             // 只有在选中了棋子的情况下才处理背景点击
@@ -421,81 +423,118 @@ public class MainApp extends Application {
      * 【动画版】 尝试执行走法并更新界面
      * @param move 要尝试的走法
      */
-    private void tryMove(Move move) {
-        // --- 检查走法是否理论上可行 (但不真正执行) ---
-        // 我们需要先获取所有合法走法来验证, Game.makeMove 会做这个验证
-        // 为了避免重复计算, 我们先假设 move 合法, 让 game.makeMove 验证
+    // private void tryMove(Move move) {
+    //     // --- 检查走法是否理论上可行 (但不真正执行) ---
+    //     // 我们需要先获取所有合法走法来验证, Game.makeMove 会做这个验证
+    //     // 为了避免重复计算, 我们先假设 move 合法, 让 game.makeMove 验证
 
-        // 1. 【注意】先保存当前选中的节点, 因为 game.makeMove 会改变状态
-        final StackPane nodeToMove = selectedPieceNode;
-        final Position fromPos = selectedPiecePosition; // 起始位置
+    //     // 1. 【注意】先保存当前选中的节点, 因为 game.makeMove 会改变状态
+    //     final StackPane nodeToMove = selectedPieceNode;
+    //     final Position fromPos = selectedPiecePosition; // 起始位置
 
-        // 2. 调用 Game 核心逻辑尝试走棋 (这会更新 board 和 currentPlayer)
-        boolean success = game.makeMove(move);
+    //     // 2. 调用 Game 核心逻辑尝试走棋 (这会更新 board 和 currentPlayer)
+    //     boolean success = game.makeMove(move);
 
-        // 3. 如果走法成功
-        if (success && nodeToMove != null) {
-            System.out.println("走法成功! 轮到 " + game.getCurrentPlayer());
+    //     // 3. 如果走法成功
+    //     if (success && nodeToMove != null) {
+    //         System.out.println("走法成功! 轮到 " + game.getCurrentPlayer());
 
-            // 4. 计算目标像素位置
-            double margin = CELL_SIZE / 2.0;
-            double radius = CELL_SIZE * 0.4;
-            double targetLayoutX = margin + move.to().col() * CELL_SIZE - radius;
-            double targetLayoutY = margin + move.to().row() * CELL_SIZE - radius;
+    //         // 4. 计算目标像素位置
+    //         double margin = CELL_SIZE / 2.0;
+    //         double radius = CELL_SIZE * 0.4;
+    //         double targetLayoutX = margin + move.to().col() * CELL_SIZE - radius;
+    //         double targetLayoutY = margin + move.to().row() * CELL_SIZE - radius;
 
-            // 5. 创建平移动画
-            TranslateTransition animation = new TranslateTransition(Duration.millis(250), nodeToMove); // 动画时长 250ms
+    //         // 5. 创建平移动画
+    //         TranslateTransition animation = new TranslateTransition(Duration.millis(250), nodeToMove); // 动画时长 250ms
             
-            // 【重要】TranslateTransition 是 *相对* 偏移
-            // 我们需要计算从当前 LayoutX/Y 到目标 LayoutX/Y 的 *差值*
-            // 但是, 我们用的是 Pane 布局, nodeToMove 的 TranslateX/Y 默认是 0
-            // 我们应该直接设置最终的 TranslateX/Y (相对于其原始 LayoutX/Y)
-            // 不对, TranslateTransition 的 setToX/Y 就是设置最终的 *Translate* 值
+    //         // 【重要】TranslateTransition 是 *相对* 偏移
+    //         // 我们需要计算从当前 LayoutX/Y 到目标 LayoutX/Y 的 *差值*
+    //         // 但是, 我们用的是 Pane 布局, nodeToMove 的 TranslateX/Y 默认是 0
+    //         // 我们应该直接设置最终的 TranslateX/Y (相对于其原始 LayoutX/Y)
+    //         // 不对, TranslateTransition 的 setToX/Y 就是设置最终的 *Translate* 值
             
-            // 我们需要移动的距离 = 目标 Layout - 当前 Layout
-            double deltaX = targetLayoutX - nodeToMove.getLayoutX();
-            double deltaY = targetLayoutY - nodeToMove.getLayoutY();
+    //         // 我们需要移动的距离 = 目标 Layout - 当前 Layout
+    //         double deltaX = targetLayoutX - nodeToMove.getLayoutX();
+    //         double deltaY = targetLayoutY - nodeToMove.getLayoutY();
             
-            animation.setToX(deltaX);
-            animation.setToY(deltaY);
+    //         animation.setToX(deltaX);
+    //         animation.setToY(deltaY);
 
 
-            // 6. 【关键】设置动画结束事件
-            animation.setOnFinished(e -> {
-                // a. 动画结束, 此时棋子在视觉上已到达新位置
-                // b. 【重要】现在才使用 game.getBoard() (已经是走棋后的状态) 重新绘制棋盘
-                //    这会正确处理吃子 (被吃的棋子消失), 并将移动的棋子放在最终的正确位置
-                drawPieces(game.getBoard()); 
+    //         // 6. 【关键】设置动画结束事件
+    //         animation.setOnFinished(e -> {
+    //             // a. 动画结束, 此时棋子在视觉上已到达新位置
+    //             // b. 【重要】现在才使用 game.getBoard() (已经是走棋后的状态) 重新绘制棋盘
+    //             //    这会正确处理吃子 (被吃的棋子消失), 并将移动的棋子放在最终的正确位置
+    //             drawPieces(game.getBoard()); 
                 
-                // c. 检查游戏结束条件
-                checkGameEndConditions();
+    //             // c. 检查游戏结束条件
+    //             checkGameEndConditions();
 
-                // d. 清除选中状态
-                selectedPiecePosition = null;
-                selectedPieceNode = null;
-            });
+    //             // d. 清除选中状态
+    //             selectedPiecePosition = null;
+    //             selectedPieceNode = null;
+    //         });
 
-            // 7. 清除走法提示 (在动画开始前)
-            clearMoveHighlights();
+    //         // 7. 清除走法提示 (在动画开始前)
+    //         clearMoveHighlights();
             
-            // 8. 播放动画
-            animation.play();
+    //         // 8. 播放动画
+    //         animation.play();
 
-            // 注意: 我们 *不* 在这里清除 selectedPiecePosition / Node
-            // 也不在这里检查游戏结束, 这些都推迟到动画结束后执行
+    //         // 注意: 我们 *不* 在这里清除 selectedPiecePosition / Node
+    //         // 也不在这里检查游戏结束, 这些都推迟到动画结束后执行
 
+    //     }
+    //     // 9. 如果走法失败
+    //     else {
+    //         System.out.println("走法失败, 请重试.");
+    //         // 清除选中和提示
+    //         clearMoveHighlights();
+    //         if(selectedPieceNode != null) {
+    //             removeHighlight(selectedPieceNode);
+    //         }
+    //         selectedPiecePosition = null;
+    //         selectedPieceNode = null;
+    //     }
+    // }
+
+    /**
+     * 【网络版】 尝试将走法发送给服务器
+     */
+    private void tryMove(Move move) {
+        System.out.println("DEBUG: Entering tryMove for move: " + move);
+        // 检查是否轮到当前玩家走棋 (客户端也做一次校验)
+        // (需要知道自己是哪个玩家, 服务器连接成功后应该告诉我们)
+// --- 【修改】使用 myPlayer 变量进行检查 ---
+        if (this.myPlayer == null) {
+            System.out.println("错误: 角色尚未分配!");
+            return;
         }
-        // 9. 如果走法失败
-        else {
-            System.out.println("走法失败, 请重试.");
-            // 清除选中和提示
-            clearMoveHighlights();
-            if(selectedPieceNode != null) {
-                removeHighlight(selectedPieceNode);
-            }
-            selectedPiecePosition = null;
-            selectedPieceNode = null;
+        if (game.getCurrentPlayer() != this.myPlayer) {
+             System.out.println("还未轮到你 (" + this.myPlayer + ") 走棋! 当前轮到: " + game.getCurrentPlayer());
+             // 清除选中和提示
+             // ... (清除代码不变) ...
+             return;
         }
+        // --- 回合检查结束 ---
+
+        // 【修改】不再调用 game.makeMove, 而是发送消息
+        if (serverConnector != null) {
+            serverConnector.sendMove(move);
+        }
+
+        // 清除本地的选中和提示 (无论服务器是否接受, 先清除)
+        clearMoveHighlights();
+        if (selectedPieceNode != null) {
+            removeHighlight(selectedPieceNode);
+        }
+        selectedPiecePosition = null;
+        selectedPieceNode = null;
+
+        // 【删除】动画逻辑移到接收服务器状态更新后处理
+        // 【删除】本地 checkGameEndConditions 逻辑
     }
 
     /**
@@ -621,6 +660,104 @@ public class MainApp extends Application {
         }
         return null; // 没有找到
     }
+
+    // ... (在 main 方法上面) ...
+
+    /**
+     * 【修改版】 当收到服务器的 GameStateMessage 时调用
+     */
+    public void updateGameFromState(GameStateMessage gameState) {
+        System.out.println("收到游戏状态更新: 当前玩家 " + gameState.currentPlayer);
+
+        // 1. 【修改】根据消息内容构建新的 Board 对象
+        Board newBoard = new Board(); // 创建一个空的 Board
+        for (int r=0; r<10; r++) for (int c=0; c<9; c++) newBoard.clearPiece(new Position(r,c)); // 确保清空
+        for (GameStateMessage.SimplePieceInfo pieceInfo : gameState.pieces) {
+             Piece piece = createPieceFromName(pieceInfo.name, pieceInfo.player, new Position(pieceInfo.row, pieceInfo.col));
+             if (piece != null) {
+                 newBoard.setPiece(piece);
+             }
+        }
+
+        // 2. 【修改】更新客户端本地 Game 对象的状态
+        this.game.setBoard(newBoard);           // 更新棋盘
+        this.game.setCurrentPlayer(gameState.currentPlayer); // 更新当前玩家
+
+        // 3. 重新绘制棋子层 (使用更新后的 game.getBoard())
+        drawPieces(this.game.getBoard());
+
+        // 4. 检查游戏结束或将军状态 (现在可以使用本地 game 对象了)
+        Player nextPlayer = this.game.getCurrentPlayer(); // 使用本地 game 对象
+        boolean gameOver = false;
+        // (检查 isCheckmate, isStalemate, isKingInCheck 的逻辑不变)
+        if (this.game.isCheckmate(nextPlayer)) { // 使用本地 game 对象
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            System.out.println("      将死! " + (nextPlayer == Player.RED ? Player.BLACK : Player.RED) + " 胜利!");
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            pieceLayer.setDisable(true);
+            gameOver = true;
+        } else if (this.game.isStalemate(nextPlayer)) { // 使用本地 game 对象
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            System.out.println("         逼和! (和棋)");
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            pieceLayer.setDisable(true);
+            gameOver = true;
+        } else if (this.game.isKingInCheck(nextPlayer)) { // 使用本地 game 对象
+            System.out.println("*******************");
+            System.out.println("      将 军 !");
+            System.out.println("*******************");
+        }
+
+
+        // 5. 根据当前玩家启用/禁用输入
+        if (!gameOver) {
+            if (this.game.getCurrentPlayer() == this.myPlayer) {
+                pieceLayer.setDisable(false); // 轮到我, 启用
+                System.out.println("轮到你了 (" + this.myPlayer + ")");
+            } else {
+                pieceLayer.setDisable(true); // 轮到对方, 禁用
+                System.out.println("等待对方 (" + this.game.getCurrentPlayer() + ") 走棋...");
+            }
+        } else {
+            pieceLayer.setDisable(true); // 游戏结束, 禁用
+        }
+    }
+
+    /**
+     * 【新辅助方法】 根据名称创建 Piece 对象 (不完整示例)
+     */
+    private Piece createPieceFromName(String name, Player player, Position position) {
+        return switch (name) {
+            case "车" -> new Che(player, position);
+            case "马" -> new Ma(player, position);
+            case "炮" -> new Pao(player, position);
+            case "帅", "将" -> new Jiang(player, position);
+            case "仕", "士" -> new Shi(player, position);
+            case "相", "象" -> new Xiang(player, position);
+            case "兵", "卒" -> new Bing(player, position);
+            default -> null;
+        };
+        // 需要 import 所有 Piece 子类
+    }
+
+    // ... (在 main 方法上面) ...
+
+    /**
+     * 【新方法】 由 ServerConnector 调用, 设置本客户端的角色
+     */
+    public void setMyPlayer(Player player) {
+        this.myPlayer = player;
+        System.out.println("我的角色被分配为: " + player);
+        // (可选) 更新窗口标题显示角色
+        if (stage != null) { // 确保 stage 已初始化
+            stage.setTitle("Xiangqi Game - " + player);
+        }
+    }
+    // 需要将 Stage stage 提升为成员变量才能在 setMyPlayer 中访问
+    // 在 MainApp 类顶部添加:
+    // private Stage stage;
+    // 在 start 方法开头添加:
+    // this.stage = stage;
 
     // ... (main 方法) ...
 

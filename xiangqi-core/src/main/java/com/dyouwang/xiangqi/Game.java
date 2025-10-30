@@ -102,6 +102,20 @@ public class Game {
         return getAllValidMoves(player).isEmpty();
     }
 
+    // ... (在 isStalemate 方法之后) ...
+
+    /** 【新】设置棋盘状态 (供客户端更新使用) */
+    public void setBoard(Board board) {
+        this.board = board;
+    }
+
+    /** 【新】设置当前玩家 (供客户端更新使用) */
+    public void setCurrentPlayer(Player player) {
+        this.currentPlayer = player;
+    }
+
+    // ... (findKing, makeMove, hypotheticalMove, undoHypotheticalMove 等方法不变) ...
+
 
     // --- (以下方法保持不变) ---
 
