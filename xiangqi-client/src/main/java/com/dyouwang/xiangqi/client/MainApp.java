@@ -587,7 +587,7 @@ public class MainApp extends Application {
 
         // 在后台线程运行 AI
         new Thread(() -> {
-            final int AI_DEPTH = 3;
+            final int AI_DEPTH = 4;
             long startTime = System.currentTimeMillis();
             if (aiEngine == null) aiEngine = new AIEngine(); 
             
